@@ -13,6 +13,8 @@ const crypto = require('crypto');
 const path = require('path');
 
 const app = express();
+// Tell Express to trust the X-Forwarded-Proto header from Render's proxy
+app.enable('trust proxy');
 
 // --- Middleware ---
 app.use(cors({ origin: process.env.CLIENT_URL })); // Allow requests from your React app
