@@ -9,7 +9,7 @@ import PhoneIcon from '@mui/icons-material/Phone';
 import BusinessIcon from '@mui/icons-material/Business';
 import PlaceIcon from '@mui/icons-material/Place';
 
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
 
 const ProfilePage = () => {
     const [user, setUser] = useState(null);

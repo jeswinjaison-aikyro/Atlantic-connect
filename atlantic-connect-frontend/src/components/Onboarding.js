@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Container, Paper, Typography, Box, Button, TextField, ToggleButtonGroup, ToggleButton } from '@mui/material';
 
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
 
 const Onboarding = ({ user, onProfileComplete }) => {
   const [role, setRole] = useState('');
