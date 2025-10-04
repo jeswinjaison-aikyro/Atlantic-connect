@@ -4,7 +4,7 @@ import { Container, Box, Typography, Button, Paper } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import FacebookIcon from '@mui/icons-material/Facebook';
 
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000";
 
 const LoginPage = () => {
   const socialLogin = (provider) => {
