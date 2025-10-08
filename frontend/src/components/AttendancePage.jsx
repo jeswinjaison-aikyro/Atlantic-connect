@@ -53,6 +53,28 @@ const AttendancePage = ({ staff, onLogout }) => {
 
     return R * c;
   };
+  // Function to send client-side errors to the server
+  const sendFailureLogToServer = async (errorType, details) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+
+      await fetch('/api/log/error', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          errorType,
+          details,
+          frontendTimestamp: new Date().toISOString()
+        })
+      });
+    } catch (logError) {
+      console.error('Failed to send failure log to server:', logError);
+    }
+  };
 
   const getCurrentLocation = () => {
     return new Promise((resolve, reject) => {
@@ -109,7 +131,7 @@ const AttendancePage = ({ staff, onLogout }) => {
         throw new Error('No clinic assigned to your profile. Please contact admin.');
       }
 
-      // Calculate distance to clinic
+      // Calculate distance to clinic (for display/backup, but NOT for early rejection)
       const distance = calculateDistance(
         location.latitude,
         location.longitude,
@@ -119,13 +141,10 @@ const AttendancePage = ({ staff, onLogout }) => {
 
       console.log(`Distance to ${assignedClinic.name}: ${distance.toFixed(2)} meters`);
 
-      // Check if within geofence
-      if (distance > assignedClinic.radius) {
-        throw new Error(
-          `You are ${Math.round(distance)}m away from ${assignedClinic.name}. ` +
-          `Please get within ${assignedClinic.radius}m to mark attendance.`
-        );
-      }
+      // ----------------------------------------------------------------------
+      // FIX: REMOVED CLIENT-SIDE GEOFENCE CHECK
+      // The server will now handle the geofence check and log the failure.
+      // ----------------------------------------------------------------------
 
       // Prepare attendance data
       const attendanceData = {
@@ -170,18 +189,32 @@ const AttendancePage = ({ staff, onLogout }) => {
         localStorage.setItem('attendanceBackup', JSON.stringify(backup.slice(-10))); // Keep last 10 records
         
       } else {
+        // Server rejected (Geofence, Duplicate). The server has already logged this failure.
+        // Throw the error message for local display only.
         throw new Error(result.message || 'Failed to mark attendance');
       }
 
     } catch (error) {
+      
+      const errorMessage = error.message;
+      
+      // Check if the error is a *true* location acquisition error (permission denied, timeout, unavailable)
+      const isLocationAcquisitionFailure = 
+          errorMessage.includes('Location access failed') || 
+          errorMessage.toLowerCase().includes('timed out'); 
+
+      if (isLocationAcquisitionFailure) {
+          // Log only true client geolocation failures
+          await sendFailureLogToServer('CLIENT_GEOLOCATION_ACQUISITION_FAILURE', errorMessage);
+      }
+      
       setMessage({
-        text: error.message,
+        text: errorMessage,
         type: 'error'
       });
       console.error('Attendance marking error:', error);
     } finally {
       setLoading(false);
-      setLocationStatus('');
     }
   };
 

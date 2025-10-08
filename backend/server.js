@@ -155,32 +155,30 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ message: 'Staff ID and password are required' });
     }
     
-    // DEBUG 1: Log incoming credentials
-    console.log(`[LOGIN ATTEMPT] Staff ID: ${staffId}`);
+    // Log incoming login attempt
+    console.log(`[AUTH:ATTEMPT] Staff ID: ${staffId} attempting login.`);
     // DO NOT LOG THE PLAINTEXT PASSWORD IN PRODUCTION!
-    console.log(`[DEBUG] Incoming Password Length: ${password.length}`); 
 
     // Find staff member
     const staff = staffMembers.find(s => s.staffId === staffId);
     if (!staff) {
+      console.log(`[AUTH:FAILURE] Staff ID: ${staffId} - Invalid credentials (ID not found).`);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
     
-    // DEBUG 2: Log the stored hash
-    console.log(`[DEBUG] Stored Hash: ${staff.password.substring(0, 35)}...`); // Log only start of hash for brevity/security
-
     // Verify password
     const isValidPassword = await bcrypt.compare(password, staff.password);
-    
-    // DEBUG 3: Log the comparison result
-    console.log(`[DEBUG] bcrypt.compare result: ${isValidPassword}`);
 
     if (!isValidPassword) {
+      console.log(`[AUTH:FAILURE] Staff: ${staff.name} (${staffId}) - Invalid password.`);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Generate token
     const token = generateToken(staff);
+
+    // Log successful login
+    console.log(`[AUTH:SUCCESS] Staff: ${staff.name} (${staffId}) logged in successfully.`);
 
     // Return user data (without password)
     const { password: _, ...staffData } = staff;
@@ -207,8 +205,10 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
 
 // Attendance routes
 app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
+  const { staffId, action, location, clinicId, distance } = req.body;
+  const staffName = req.user.name; // Get name from authenticated token
+
   try {
-    const { staffId, action, location, clinicId, distance } = req.body;
 
     // Validate request
     if (!staffId || !action || !location || !clinicId) {
@@ -219,9 +219,14 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Invalid action. Must be check-in or check-out' });
     }
 
+    // Log the attendance attempt with location
+    console.log(`[ATTENDANCE:ATTEMPT] Staff: ${staffName} (${staffId}) tried to ${action} from location: Lat ${location.latitude.toFixed(6)}, Lng ${location.longitude.toFixed(6)} (Acc: ±${location.accuracy}m).`);
+
+
     // Verify staff member
     const staff = staffMembers.find(s => s.staffId === staffId);
     if (!staff) {
+      console.log(`[ATTENDANCE:FAILURE] Staff ID: ${staffId} not found during ${action} attempt.`);
       return res.status(404).json({ message: 'Staff member not found' });
     }
 
@@ -235,6 +240,9 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
     );
 
     if (calculatedDistance > clinic.radius) {
+      // Log location failure - THIS IS THE LOG THAT CAPTURES THE FAILED LOCATION
+      console.log(`[ATTENDANCE:FAILURE] Staff: ${staffName} (${staffId}) - Location failed for ${action}. Distance: ${Math.round(calculatedDistance)}m > ${clinic.radius}m. Reported Location: Lat ${location.latitude.toFixed(6)}, Lng ${location.longitude.toFixed(6)} (Acc: ±${location.accuracy}m).`);
+
       return res.status(400).json({ 
         message: `Location verification failed. You are ${Math.round(calculatedDistance)}m away from ${clinic.name}. Please get within ${clinic.radius}m.`,
         distance: Math.round(calculatedDistance),
@@ -251,6 +259,8 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
     );
 
     if (recentRecord) {
+      // Log duplicate failure
+      console.log(`[ATTENDANCE:FAILURE] Staff: ${staffName} (${staffId}) - Duplicate ${action} detected.`);
       return res.status(400).json({ 
         message: `Duplicate ${action} detected. Please wait before marking attendance again.`
       });
@@ -276,7 +286,9 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
 
     attendanceRecords.push(attendanceRecord);
 
-    console.log(`Attendance marked: ${staff.name} - ${action} at ${clinic.name}`);
+    // Log successful attendance
+    console.log(`[ATTENDANCE:SUCCESS] Staff: ${staff.name} (${staffId}) - ${action} recorded. Clinic: ${clinic.name}, Distance: ${Math.round(calculatedDistance)}m, Location: Lat ${location.latitude.toFixed(6)}, Lng ${location.longitude.toFixed(6)}.`);
+
 
     res.json({
       message: `${action} recorded successfully`,
@@ -285,6 +297,8 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Attendance marking error:', error);
+    // Log internal error
+    console.log(`[ATTENDANCE:ERROR] Staff: ${staffId} - Internal server error during ${action}.`);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -346,7 +360,25 @@ app.get('/api/attendance/all', authenticateToken, (req, res) => {
     console.error('Error fetching all attendance records:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
+}); // <-- FIXED: Added missing closing statement here
+
+// NEW LOGGING ROUTE FOR CLIENT-SIDE ERRORS
+app.post('/api/log/error', authenticateToken, (req, res) => {
+  const { errorType, details, frontendTimestamp } = req.body;
+  const staffId = req.user.staffId;
+  const staffName = req.user.name;
+
+  // Log the specific client-side error
+  console.log(`[CLIENT:ERROR] Staff: ${staffName} (${staffId}) encountered a client-side error.`);
+  console.log(`  > Type: ${errorType}`);
+  console.log(`  > Details: ${details}`);
+  console.log(`  > Timestamp: ${frontendTimestamp}`);
+  console.log(`  > Client IP (Proxied): ${req.ip}`); // Optionally log IP for context
+
+  // Send a minimal response back
+  res.status(200).json({ message: 'Log received' });
 });
+
 
 // Serve static files in production
 app.use(express.static(path.join(__dirname, '../frontend/build')));
